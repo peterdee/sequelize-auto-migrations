@@ -26,7 +26,7 @@ if(!process.env.PWD){
 }
 
 let {
-    migrationsDir, 
+    migrationsDir,
     modelsDir
 } = pathConfig(options);
 
@@ -75,9 +75,14 @@ let migrationFiles = fs.readdirSync(migrationsDir)
   .filter((file) => {
       let rev = parseInt( path.basename(file).split('-',2)[0]);
       return (rev >= fromRevision);
+  })
+  // remove completed migrations
+  .filter((file) => {
+      const completed = require(`${migrationsDir}/${file}`).info.completed;
+      return !completed
   });
-  
-console.log("Migrations to execute:");  
+
+console.log("Migrations to execute:");
 migrationFiles.forEach((file) => {
     console.log("\t"+file);
 });
@@ -86,17 +91,29 @@ if (options.list)
     process.exit(0);
 
 
-Async.eachSeries(migrationFiles, 
+Async.eachSeries(migrationFiles,
     function (file, cb) {
         console.log("Execute migration from file: "+file);
         migrate.executeMigration(queryInterface, path.join(migrationsDir, file), fromPos, (err) => {
             if (stop)
                 return cb("Stopped");
-                
+
             cb(err);
         });
         // set pos to 0 for next migration
         fromPos = 0;
+        // add complete flag to executed migrations
+        fs.readFile(`${migrationsDir}/${file}`, 'utf8', function (err,data) {
+            if (err) {
+                return console.log(err);
+            }
+            const result = data.replace(/var info = {/g, `var info = {
+    completed: true,`);
+
+            fs.writeFile(`${migrationsDir}/${file}`, result, 'utf8', function (err) {
+                if (err) return console.log(err);
+            });
+        });
     },
     function(err) {
         console.log(err);
